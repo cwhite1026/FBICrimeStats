@@ -1,0 +1,16 @@
+---
+title: "Gun death statistics"
+author: "Catherine White"
+date: "September 27, 2016"
+output: pdf_document
+---
+
+## Downloading non-FBI data
+
+I have a different markdown file that has the FBI data but I can't get to it today.  Instead of just not working on it, I'm going to work on finding some other sources of data.  I would particularly like to know how guns factor into the larger scheme of things- what fraction of crimes are committed with guns?  What fraction of suicides?  What kinds of guns?  What fraction of deaths are firearm related?  Who do these things affect?
+
+### CDC Mortality data
+```{r}
+cdc_mortality_url <- "http://wonder.cdc.gov/mortSQL.html""
+
+```

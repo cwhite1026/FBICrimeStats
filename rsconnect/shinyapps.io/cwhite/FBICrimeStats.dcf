@@ -1,0 +1,10 @@
+name: FBICrimeStats
+account: cwhite
+server: shinyapps.io
+appId: 130263
+bundleId: 581350
+url: https://cwhite.shinyapps.io/FBICrimeStats/
+when: 1476039763.48765
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: crimestats.Rmd|notes.Rmd

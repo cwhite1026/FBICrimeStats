@@ -1,0 +1,542 @@
+---
+title: "Exploratory analysis of FBI crime statistics"
+author: "Catherine White"
+date: "December 3, 2015"
+output: pdf_document
+---
+
+## Analysis goals ##
+
+The main goal of this analysis is to be able to make coherent statements about gun utility vs gun harm in the United States.  Specific questions to be addressed:
+
+1. How do gun deaths vary by weapon type?
+1. How common are different weapon types?
+2. How useful are various types of weapons?
+
+To answer these questions, we need a fairly comprehensive data set.  We need to know:
+
+- How many people are killed by different weapon types each year?  We obtain this from the FBI's [*Crime in the U.S.* (CIUS) database](https://www.fbi.gov/stats-services/crimestats), which breaks down gun deaths by year and gun type.
+- How many guns are owned by US residents?
+- What do gun owners use their guns for?
+
+## Getting the data ##
+
+In this section, we load all the libraries for the analysis and download the data from the sources.  Boring, but you need to have data to analyze it.
+
+Load in the libraries we'll need.  The extra arguments just suppress unnecessary outputs.
+```{r}
+library(lubridate, warn.conflicts = FALSE, quietly = TRUE)
+library(foreign, warn.conflicts = FALSE, quietly = TRUE)
+library(data.table, warn.conflicts = FALSE, quietly = TRUE)
+library(tidyr, warn.conflicts = FALSE, quietly = TRUE)
+library(ggplot2, warn.conflicts = FALSE, quietly = TRUE)
+library(dplyr, warn.conflicts = FALSE, quietly = TRUE)
+library(gdata, warn.conflicts = FALSE, quietly = TRUE)
+```
+
+### FBI Crime in the United States (CIUS) data ###
+Download the data and documentation from the FBI's CIUS report from the last five years.  This code last downloaded and processed the data `r now()`.
+```{r}
+#Make directories for each of them
+dir.create("CIUS2015", showWarnings = FALSE)
+dir.create("CIUS2014", showWarnings = FALSE)
+dir.create("CIUS2013", showWarnings = FALSE)
+dir.create("CIUS2012", showWarnings = FALSE)
+dir.create("CIUS2011", showWarnings = FALSE)
+dir.create("CIUS2010", showWarnings = FALSE)
+
+#Define the URLs with the zipped data
+daturl2015<- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                    "2015/crime-in-the-u.s.-2015/resource-pages/downloads/",
+                    "cius2015datatables.zip")
+daturl2014 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                    "2014/crime-in-the-u.s.-2014/resource-pages/downloads/",
+                    "cius2014datatables.zip")
+daturl2013 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                     "2013/crime-in-the-u.s.-2013/resource-pages/downloads/",
+                     "cius2013datatables.zip")
+daturl2012 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                     "2012/crime-in-the-u.s.-2012/resource-pages/",
+                     "cius2012datatables.zip")
+daturl2011 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                     "2011/crime-in-the-u.s.-2011/CIUS2011datatables.zip")
+daturl2010 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                     "2010/crime-in-the-u.s.-2010/CIUS2010datatables.zip")
+
+#If we don't already have the zipped files, download them
+if (!file.exists("CIUS2015/datatables.zip")){
+    download.file(daturl2015, destfile = "CIUS2015/datatables.zip")
+}
+if (!file.exists("CIUS2014/datatables.zip")){
+    download.file(daturl2014, destfile = "CIUS2014/datatables.zip")
+}
+if (!file.exists("CIUS2013/datatables.zip")){
+    download.file(daturl2013, destfile = "CIUS2013/datatables.zip")
+}
+if (!file.exists("CIUS2012/datatables.zip")){
+    download.file(daturl2012, destfile = "CIUS2012/datatables.zip")
+}
+if (!file.exists("CIUS2011/datatables.zip")){
+    download.file(daturl2011, destfile = "CIUS2011/datatables.zip")
+}
+if (!file.exists("CIUS2010/datatables.zip")){
+    download.file(daturl2010, destfile = "CIUS2010/datatables.zip")
+}
+
+#Unzip the files
+unzip("CIUS2015/datatables.zip", exdir = "CIUS2015")
+unzip("CIUS2014/datatables.zip", exdir = "CIUS2014")
+unzip("CIUS2013/datatables.zip", exdir = "CIUS2013")
+unzip("CIUS2012/datatables.zip", exdir = "CIUS2012")
+unzip("CIUS2011/datatables.zip", exdir = "CIUS2011")
+unzip("CIUS2010/datatables.zip", exdir = "CIUS2010")
+
+#Get the aggravated assault and robbery data from 2011 because it seems 
+#to be missing from the zip file
+download.file("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/2011/crime-in-the-u.s.-2011/tables/aggravated-assault-table/output.xls", destfile = "CIUS2011/CIUS2011datatables/aggravated-assault-table2011.xls")
+download.file("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/2011/crime-in-the-u.s.-2011/tables/robbery-table-3/output.xls", destfile = "CIUS2011/CIUS2011datatables/robbery-table-3.xls")
+
+#Get the documentation (we won't use it but it's good to keep it with the data)
+docurl2015 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                     "2015/crime-in-the-u.s.-2015/resource-pages/downloads/",
+                     "cius2015datadeclarations_overviews.zip")
+docurl2014 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                     "2014/crime-in-the-u.s.-2014/resource-pages/downloads/",
+                     "cius2014datadeclarations_overviews.zip")
+docurl2013 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                     "2013/crime-in-the-u.s.-2013/resource-pages/downloads/",
+                     "CIUS2013datadeclarations_overviews.zip")
+docurl2012 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                     "2012/crime-in-the-u.s.-2012/resource-pages/",
+                     "cius2012datadeclarations_overviews.zip")
+docurl2011 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                     "2011/crime-in-the-u.s.-2011/",
+                     "cius-2011-data-declarations-and-overviews")
+docurl2010 <- paste0("https://www.fbi.gov/about-us/cjis/ucr/crime-in-the-u.s/",
+                     "2010/crime-in-the-u.s.-2010/",
+                     "CIUS2010datadeclarations_overviews.zip")
+
+if (!file.exists("CIUS2015/datadeclarations_overviews.zip")){
+    download.file(docurl2015, destfile = "CIUS2015/datadeclarations_overviews.zip")
+}
+if (!file.exists("CIUS2014/datadeclarations_overviews.zip")){
+    download.file(docurl2014, destfile = "CIUS2014/datadeclarations_overviews.zip")
+}
+if (!file.exists("CIUS2013/datadeclarations_overviews.zip")){
+    download.file(docurl2013, destfile = "CIUS2013/datadeclarations_overviews.zip")
+}
+if (!file.exists("CIUS2012/datadeclarations_overviews.zip")){
+    download.file(docurl2012, destfile = "CIUS2012/datadeclarations_overviews.zip")
+}
+if (!file.exists("CIUS2011/datadeclarations_overviews.zip")){
+    download.file(docurl2011, destfile = "CIUS2011/datadeclarations_overviews.zip")
+}
+if (!file.exists("CIUS2010/datadeclarations_overviews.zip")){
+    download.file(docurl2010, destfile = "CIUS2010/datadeclarations_overviews.zip")
+}
+```
+
+### General Social Survey data ###
+
+Download the GSS data.  You may need to create an account with GSS for this step.
+```{r}
+#gssurl <- paste0("https://gssdataexplorer.norc.org/system/data/GSS/",
+#                     "1972_2014/GSS_spss.zip")
+#download.file(gssurl, destfile = "gss_dataset.zip")
+
+```
+
+        
+        
+## Reading in the data ##
+
+### FBI Crime in the United States (CIUS) data ###
+
+Pull in the FBI CIUS breakdown of **aggravated assaults by weapon**.  This makes no distinction between different firearms, just between firearms and other kinds of weapons.  The contents of these tables are the percentages of aggravated assaults *reported to the FBI* that were committed with each kind of weapon.
+```{r}
+#Pull in the overview of percentages of aggravated assaults by weapon
+agg_assault_by_weapon2014 <-read.xls("CIUS2014/Aggravated_Assault_Table_Aggravated_Assault_Types_of_Weapons_Used_Percent_Distribution_by_Region_2014.xls")
+agg_assault_by_weapon2013 <-read.xls("CIUS2013/Aggravated_Assault_Table_Aggravated_Assault_Types_of_Weapons_Used_Percent_Distribution_by_Region_2013.xls")
+agg_assault_by_weapon2012 <- read.xls("CIUS2012/Tables/Aggravated_Assault_Table_Aggravated_Assault_Types_of_Weapons_Used_Percent_Distributioin_by_Region_2012.xls")
+agg_assault_by_weapon2011 <- read.xls("CIUS2011/CIUS2011datatables/aggravated-assault-table2011.xls")
+agg_assault_by_weapon2010 <- read.xls("CIUS2010/Excel/10aggvtbl.xls")
+
+#Rename the columns- they are the same for all years
+colnames <- unlist(agg_assault_by_weapon2014[3,], use.names = FALSE)
+colnames <- as.character(colnames)
+colnames <- gsub("[,\ ]?\n\ ?", ".", colnames)
+colnames <- gsub(",?\ |,", ".", colnames)
+names(agg_assault_by_weapon2014) <- colnames
+names(agg_assault_by_weapon2013) <- colnames
+names(agg_assault_by_weapon2012) <- colnames
+names(agg_assault_by_weapon2011) <- colnames
+names(agg_assault_by_weapon2010) <- colnames
+
+#Subset to just the rows with the data- cuts off some superfluous
+#header stuff at the top and a comment at the bottom
+agg_assault_by_weapon2014 <- data.table(agg_assault_by_weapon2014[4:8,])
+agg_assault_by_weapon2013 <- data.table(agg_assault_by_weapon2013[4:8,])
+agg_assault_by_weapon2012 <- data.table(agg_assault_by_weapon2012[4:8,])
+agg_assault_by_weapon2011 <- data.table(agg_assault_by_weapon2011[4:8,])
+agg_assault_by_weapon2010 <- data.table(agg_assault_by_weapon2010[4:8,])
+
+#Combine the different years into a single table
+agg_assault_by_weapon2014[,Year:=2014]
+agg_assault_by_weapon2013[,Year:=2013]
+agg_assault_by_weapon2012[,Year:=2012]
+agg_assault_by_weapon2011[,Year:=2011]
+agg_assault_by_weapon2010[,Year:=2010]
+agg_assault_by_weapon <- rbind(agg_assault_by_weapon2014, 
+                               agg_assault_by_weapon2013,
+                               agg_assault_by_weapon2012,
+                               agg_assault_by_weapon2011,
+                               agg_assault_by_weapon2010)
+
+#Clean up the by-year ones
+rm(list = c("agg_assault_by_weapon2010", "agg_assault_by_weapon2011",
+            "agg_assault_by_weapon2012", "agg_assault_by_weapon2013",
+            "agg_assault_by_weapon2014"))
+
+#Make the data tidy- gather and then get rid of totals, which are all 100
+agg_assault_by_weapon <- gather(data = agg_assault_by_weapon, 
+                            key="Weapon", value= "Percentage", 
+                            -Region, -Year)
+not_totals <- agg_assault_by_weapon$Weapon!="Total.all.weapons1"
+agg_assault_by_weapon <- agg_assault_by_weapon[not_totals,]
+
+#Make sure all the variables are the right format
+agg_assault_by_weapon <- agg_assault_by_weapon %>%
+    mutate(Percentage=as.numeric(Percentage)) %>%
+    mutate(Year=as.factor(Year)) %>%
+    data.table()
+agg_assault_by_weapon[, Region := factor(Region, levels=c("Total","Northeast",
+                                                      "Midwest","South", "West"))]
+```
+
+Pull in the FBI CIUS percentage breakdown of **homicide by weapon**.  The contents of these tables are the percentages of homicides *reported to the FBI* that were committed with each kind of weapon.
+```{r}
+#Read the file in and cut off empty columns at the right
+homicide_by_weapon2014 <- read.xls("CIUS2014/Expanded_Homicide_Data_Table_7_Murder_Types_of_Weapons_Used_Percent_Distribution_by_Region_2014.xls")
+homicide_by_weapon2014 <- homicide_by_weapon2014[,1:6]
+homicide_by_weapon2013 <- read.xls("CIUS2013/Expanded_Homicide_Data_Table_7_Murder_Types_of_Weapons_Used_Percent_Distribution_by_Region_2013.xls")
+homicide_by_weapon2013 <- homicide_by_weapon2013[,1:6]
+homicide_by_weapon2012 <- read.xls("CIUS2012/Tables/Expanded_Homicide_Data_Table_7_Murder_Types_of_Weapons_Used_Percent_Distribution_by_Region_2012.xls")
+homicide_by_weapon2012 <- homicide_by_weapon2012[,1:6]
+homicide_by_weapon2011 <- read.xls("CIUS2011/CIUS2011datatables/SHR Tables 2011/Expanded_Homicide_Data_Table_7_Murder_Types_of_Weapons_Used_Percent_Distribution_by_Region_2011.xls")
+homicide_by_weapon2011 <- homicide_by_weapon2011[,1:6]
+homicide_by_weapon2010 <- read.xls("CIUS2010/Excel/10shrtbl07.xls")
+homicide_by_weapon2010 <- homicide_by_weapon2010[,1:6]
+
+#Rename the columns- all the columns match up across years
+colnames <- unlist(homicide_by_weapon2014[3,], use.names = FALSE)
+colnames <- as.character(colnames)
+colnames <- gsub("[,\ ]?\n\ ?", ".", colnames)
+colnames <- gsub(",?\ |,", ".", colnames)
+names(homicide_by_weapon2014) <- colnames
+names(homicide_by_weapon2013) <- colnames
+names(homicide_by_weapon2012) <- colnames
+names(homicide_by_weapon2011) <- colnames
+names(homicide_by_weapon2010) <- colnames
+
+#Cut off header and comment at the end, convert to data.table
+homicide_by_weapon2014 <- data.table(homicide_by_weapon2014[4:8,])
+homicide_by_weapon2013 <- data.table(homicide_by_weapon2013[4:8,])
+homicide_by_weapon2012 <- data.table(homicide_by_weapon2012[4:8,])
+homicide_by_weapon2011 <- data.table(homicide_by_weapon2011[4:8,])
+homicide_by_weapon2010 <- data.table(homicide_by_weapon2010[4:8,])
+
+#Combine the data into one large table
+homicide_by_weapon2014[, Year:=2014]
+homicide_by_weapon2013[, Year:=2013]
+homicide_by_weapon2012[, Year:=2012]
+homicide_by_weapon2011[, Year:=2011]
+homicide_by_weapon2010[, Year:=2010]
+homicide_by_weapon <- rbind(homicide_by_weapon2014,
+                            homicide_by_weapon2013,
+                            homicide_by_weapon2012,
+                            homicide_by_weapon2011,
+                            homicide_by_weapon2010)
+
+#Clean up the unneeded variables
+rm(list = c("homicide_by_weapon2014", "homicide_by_weapon2013",
+            "homicide_by_weapon2012", "homicide_by_weapon2011",
+            "homicide_by_weapon2010"))
+
+#Make the data tidy- gather and then get rid of totals, which are all 100
+homicide_by_weapon <- gather(data = homicide_by_weapon, 
+                                key="Weapon", value= "Percentage", 
+                                -Region, -Year)
+not_totals <- homicide_by_weapon$Weapon!="Total.all.weapons2"
+homicide_by_weapon <- homicide_by_weapon[not_totals,]
+
+#Make sure all the variables are the right format
+homicide_by_weapon <- homicide_by_weapon %>%
+    mutate(Percentage=as.numeric(Percentage)) %>%
+    mutate(Year=as.factor(Year)) %>%
+    data.table()
+homicide_by_weapon[, Region := factor(Region, levels=c("Total","Northeast",
+                                                      "Midwest","South", "West"))]
+```
+
+Pull in the FBI CIUS percentage breakdown of **robbery by weapon**.  The contents of these tables are the percentages of homicides *reported to the FBI* that were committed with each kind of weapon.
+```{r}
+#Read the data
+robbery_by_weapon2014 <- read.xls("CIUS2014/Robbery_Table_3_Robbery_Types_of_Weapons_Used_Percent_Distribution_by_Region_2014.xls")
+robbery_by_weapon2013 <- read.xls("CIUS2013/Robbery_Table_3_Robbery_Types_of_Weapons_Used_Percent_Distribution_by_Region_2013.xls")
+robbery_by_weapon2012 <- read.xls("CIUS2012/Tables/Robbery_Table_3_Robbery_Types_of_Weapons_Used_Percent_Distribution_by_Region_2012.xls")
+robbery_by_weapon2011 <- read.xls("CIUS2011/CIUS2011datatables/robbery-table-3.xls")
+robbery_by_weapon2010 <- read.xls("CIUS2010/Excel/10robtbl3.xls")
+
+#Rename the columns.  Note that there are two main classes, armed and strong-arm,
+#and the column labels are split over two rows so they need to be merged.
+#All years have identical labels
+colnames1 <- unlist(robbery_by_weapon2014[3,], use.names = FALSE)
+colnames1 <- as.character(colnames1)
+colnames1[colnames1==""] <- "Armed"
+colnames2 <- unlist(robbery_by_weapon2014[4,], use.names = FALSE)
+colnames <- paste(colnames1, colnames2)
+colnames <- gsub("[,\ ]?\n\ ?", ".", colnames)
+colnames <- gsub(",?\ |,", ".", colnames)
+names(robbery_by_weapon2014) <- colnames
+names(robbery_by_weapon2013) <- colnames
+names(robbery_by_weapon2012) <- colnames
+names(robbery_by_weapon2011) <- colnames
+names(robbery_by_weapon2010) <- colnames
+
+#Cut off the header and footer
+robbery_by_weapon2014 <- data.table(robbery_by_weapon2014[5:9,])
+robbery_by_weapon2013 <- data.table(robbery_by_weapon2013[5:9,])
+robbery_by_weapon2012 <- data.table(robbery_by_weapon2012[5:9,])
+robbery_by_weapon2011 <- data.table(robbery_by_weapon2011[5:9,])
+robbery_by_weapon2010 <- data.table(robbery_by_weapon2010[5:9,])
+
+#Combine the years into one data table
+robbery_by_weapon2014[,Year:=2014]
+robbery_by_weapon2013[,Year:=2013]
+robbery_by_weapon2012[,Year:=2012]
+robbery_by_weapon2011[,Year:=2011]
+robbery_by_weapon2010[,Year:=2010]
+robbery_by_weapon <- rbind(robbery_by_weapon2014, robbery_by_weapon2013,
+                           robbery_by_weapon2012, robbery_by_weapon2011,
+                           robbery_by_weapon2010)
+
+#Clean up unneeded data frames
+rm(list = c("robbery_by_weapon2014", "robbery_by_weapon2013",
+            "robbery_by_weapon2012", "robbery_by_weapon2011",
+            "robbery_by_weapon2010"))
+
+#Make the data tidy- gather and then get rid of totals, which are all 100
+robbery_by_weapon <- gather(data = robbery_by_weapon, 
+                            key="Weapon", value= "Percentage", 
+                            -Region., -Year)
+not_totals <- robbery_by_weapon$Weapon!="Total.all.weapons1."
+robbery_by_weapon <- robbery_by_weapon[not_totals,]
+
+#Make sure all the variables are the right format
+robbery_by_weapon <- robbery_by_weapon %>%
+    mutate(Percentage=as.numeric(Percentage)) %>%
+    mutate(Year=as.factor(Year)) %>%
+    rename(Region = Region.) %>%
+    data.table()
+robbery_by_weapon[, Region := factor(Region, levels=c("Total","Northeast",
+                                                      "Midwest","South", "West"))]
+```
+
+Figures on **justifiable homicides** (defined as someone killing a felon either in the line of duty if the killer is law enforcement or while in the act of committing a felony if the killer is a private citizen) from the FBI CIUS data.  The 2014 tables have all 5 years of values, so we only need the one.
+```{r}
+#Read the tables and crop extra columns
+justifiable_by_weapon_law_enforcement <- read.xls("CIUS2014/Expanded_Homicide_Data_Table_14_Justifiable_Homicide_by_Weapon_Law_Enforcement_2010-2014.xls")
+justifiable_by_weapon_law_enforcement <- justifiable_by_weapon_law_enforcement[,1:10]
+justifiable_by_weapon_citizens <- read.xls("CIUS2014/Expanded_Homicide_Data_Table_15_Justifiable_Homicide_by_Weapon_Private_Citizen_2010-2014.xls")
+justifiable_by_weapon_citizens <- justifiable_by_weapon_citizens[,1:10  ]
+
+#Rename the columns- both have the same column names
+colnames <- unlist(justifiable_by_weapon_law_enforcement[3,], use.names = FALSE)
+colnames <- as.character(colnames)
+colnames <- gsub("[,\ ]?\n\ ?", ".", colnames)
+colnames <- gsub(",?\ |,", ".", colnames)
+names(justifiable_by_weapon_citizens) <- colnames
+names(justifiable_by_weapon_law_enforcement) <- colnames
+
+#Cut off the header and footer for each
+justifiable_by_weapon_citizens <- data.table(justifiable_by_weapon_citizens[4:8,])
+justifiable_by_weapon_law_enforcement <- data.table(justifiable_by_weapon_law_enforcement[4:8,])
+
+#Merge the two 
+justifiable_by_weapon_law_enforcement[, Perpetrator:= "Law Enforcement"]
+justifiable_by_weapon_citizens[, Perpetrator:="Private Citizen"]
+justifiable_by_weapon <- rbind(justifiable_by_weapon_law_enforcement, 
+                               justifiable_by_weapon_citizens)
+
+#Clean up
+rm(list = c("justifiable_by_weapon_law_enforcement",
+            "justifiable_by_weapon_citizens"))
+```
+
+
+Homicide circumstances and method from the FBI CIUS expanded homicide table 11.  This table is primarily useful over the others because it has the homicides with different circumstances broken down by weapon.  In this one, it differentiates between different kinds of guns.  Since all of the information was voluntarily supplied by police departments, many of the incidents have no gun listed, so there's a fourth, "unknown," category.
+```{r}
+#Read the table and cut off an empty column
+murders_by_weapon2014 <- read.xls("CIUS2014/Expanded_Homicide_Data_Table_11_Murder_Circumstances_by_Weapon_2014.xls")
+murders_by_weapon2014 <- murders_by_weapon2014[,1:19]
+murders_by_weapon2013 <- read.xls("CIUS2013/Expanded_Homicide_Data_Table_11_Murder_Circumstances_by_Weapon_2013.xls")
+murders_by_weapon2013 <- murders_by_weapon2013[,1:19]
+murders_by_weapon2012 <- read.xls("CIUS2012/Tables/Expanded_Homicide_Data_Table_11_Murder_Circumstances_by_Weapon_2012.xls")
+murders_by_weapon2012 <- murders_by_weapon2012[,1:19]
+murders_by_weapon2011 <- read.xls("CIUS2011/CIUS2011datatables/SHR Tables 2011/Expanded_Homicide_Data_Table_11_Murder_Circumstances_by_Weapon_2011.xls")
+murders_by_weapon2011 <- murders_by_weapon2011[,1:19]
+murders_by_weapon2010 <- read.xls("CIUS2010/Excel/10shrtbl11.xls")
+murders_by_weapon2010 <- murders_by_weapon2010[,1:19]
+
+#Rename the columns- all of the years have the same names
+colnames <- unlist(murders_by_weapon2014[3,], use.names = FALSE)
+colnames <- as.character(colnames)
+colnames <- gsub("[,\ ]?\n\ ?", ".", colnames)
+colnames <- gsub(",?\ |,", ".", colnames)
+names(murders_by_weapon2014) <- colnames
+names(murders_by_weapon2013) <- colnames
+names(murders_by_weapon2012) <- colnames
+names(murders_by_weapon2011) <- colnames
+names(murders_by_weapon2010) <- colnames
+
+#Only take the body of the table
+murders_by_weapon2014 <-  data.table(murders_by_weapon2014[4:30,])
+murders_by_weapon2013 <-  data.table(murders_by_weapon2013[4:30,])
+murders_by_weapon2012 <-  data.table(murders_by_weapon2012[4:30,])
+murders_by_weapon2011 <-  data.table(murders_by_weapon2011[4:30,])
+murders_by_weapon2010 <-  data.table(murders_by_weapon2010[4:30,])
+
+#Merge into one table
+murders_by_weapon2014[, Year := 2014]
+murders_by_weapon2013[, Year := 2013]
+murders_by_weapon2012[, Year := 2012]
+murders_by_weapon2011[, Year := 2011]
+murders_by_weapon2010[, Year := 2010]
+murder_circumstance_by_weapon <- rbind(murders_by_weapon2014, 
+                                       murders_by_weapon2013,
+                                       murders_by_weapon2012, 
+                                       murders_by_weapon2011,
+                                       murders_by_weapon2010)
+
+#Clean up
+rm(list = c("murders_by_weapon2014", "murders_by_weapon2013",
+            "murders_by_weapon2012", "murders_by_weapon2011",
+            "murders_by_weapon2010"))
+```
+
+## Exploratory Plots ##
+
+In this section, I plot up some visualizations of the data to get a better idea of what the data hold.
+
+### FBI CIUS data ###
+
+First, let's look at the data that don't distinguish between different kinds of firearms to see how guns compare to other weapons overall.
+
+```{r fig.height=5}
+#Make the plot
+pl <- ggplot(robbery_by_weapon, aes(Weapon, Percentage, fill=Year)) +
+    geom_bar(stat="identity", position="dodge", colour="black") + 
+    scale_x_discrete(limits=c("Strong-arm.", "Armed..Firearms", 
+                              "Armed.Knives.or.cutting.instruments", 
+                              "Armed.Other.weapons"),
+        labels=c("Unarmed", "Armed: Firearms","Armed: Knives", "Armed: Other"))+
+    theme(axis.text.x=element_text(angle = 25, hjust = 1)) +
+    facet_grid(Region~.)+
+    theme_bw() + 
+    scale_fill_brewer(palette = "Set1") +
+    ggtitle("Percentages of robberies by weapons used")
+print(pl)
+```
+
+The above plot shows the percentage of robberies committed with four different types of weapon: no weapon (unarmed/strong-arm robberies), firearms, knives or other cutting instruments, and weapons that either are not a knives or firearms or are not specified.  The color shows the year and the different panels are for the different regions.
+
+<hr />
+
+```{r fig.height=5}
+#Make the plot
+pl <- ggplot(agg_assault_by_weapon, aes(Weapon, Percentage, fill=Year)) +
+    geom_bar(stat="identity", position="dodge", colour="black") + 
+     scale_x_discrete(limits=c("Firearms", "Knives.or.cutting.instruments", 
+                               "Personal.weapons.(hands.fists.feet.etc.)", 
+                               "Other.weapons.(clubs.blunt.objects.etc.)"),
+         labels=c("Firearms", "Knives","Personal Weapons", "Other"))+
+    theme(axis.text.x=element_text(angle = 45, hjust = 1)) +
+    facet_grid(Region~.)+
+    theme_bw() + 
+    scale_fill_brewer(palette = "Set1") +
+    ggtitle("Percentages of aggravated assaults by weapons used")
+print(pl)
+```
+
+The above plots shows the percentages of aggravated assault broken down by weapon type used: firearms, knives or other cutting instruments, personal weapons (defined as hands, feet, etc.), and all other weapons.  All of the examples given for the "other" category are blunt objects.  It's not clear whether or not the category also includes missing data.
+
+<hr />
+
+```{r fig.height=5}
+#Make the plot
+pl <- ggplot(homicide_by_weapon, aes(Weapon, Percentage, fill=Year)) +
+    geom_bar(stat="identity", position="dodge", colour="black") + 
+     scale_x_discrete(limits=c("Firearms", "Knives.or.cutting.instruments", 
+                               "Personal.weapons.(hands.fists.feet.etc.)3", 
+                               "Unknown.or.other.dangerous.weapons"),
+         labels=c("Firearms", "Knives","Personal Weapons", "Unknown/Other"))+
+    theme(axis.text.x=element_text(angle = 45, hjust = 1)) +
+    facet_grid(Region~.)+
+    theme_bw() + 
+    scale_fill_brewer(palette = "Set1") +
+    ggtitle("Percentages of homicides by weapons used")
+print(pl)
+```
+
+The above plot shows homicides broken down by weapon used.  The categories are the same as aggravated assault except that the "other" category explicitly includes unknown weapons.
+
+<hr />
+
+One of the interesting things from the three plots above is that the South seems to have a higher percentage of gun-related crimes than the other regions.  Let's check that out.
+```{r}
+#We'll need a data frame that has the firearm stats from each kind of crime
+regional_firearms <- data.table(robbery_by_weapon[Weapon=="Armed..Firearms",])
+regional_firearms[,Crime:="Robbery"]
+temp <- data.table(homicide_by_weapon[homicide_by_weapon$Weapon=="Firearms",])
+temp[, Crime := "Homicide"]
+regional_firearms <- rbind(regional_firearms, temp)
+temp <- data.table(agg_assault_by_weapon[agg_assault_by_weapon$Weapon=="Firearms",])
+temp[, Crime := "Aggravated Assault"]
+regional_firearms <- rbind(regional_firearms, temp)
+regional_firearms <- regional_firearms %>%
+    select(-Weapon) %>%
+    mutate(Percentage = as.numeric(Percentage)) 
+
+#Plot that up
+pl <- ggplot(regional_firearms, aes(Region, Percentage, fill=Year)) +
+    geom_bar(stat="identity", position="dodge", colour="black") + 
+    theme(axis.text.x=element_text(angle = 45, hjust = 1)) +
+    facet_grid(Crime~.)+
+    theme_bw() + 
+    scale_fill_brewer(palette = "Set1") +
+    ggtitle("Percentages of crimes committed with firearms by region")
+print(pl)
+```
+
+That's not very helpful. Let's look at the difference between the total and each region
+```{r}
+#Calculate the difference between the total and each region
+regional_firearms$Total <- rep(regional_firearms$Percentage[regional_firearms$Region
+                                                            =="Total"], each=5)
+regional_firearms <- regional_firearms[regional_firearms$Region != "Total"]
+regional_firearms <- data.table(regional_firearms)
+regional_firearms[, Region.minus.Total.Percent := Percentage - Total]
+
+#Plot
+pl <- ggplot(regional_firearms, aes(Region, Region.minus.Total.Percent, fill=Year)) +
+    geom_bar(stat="identity", position="dodge", colour="black") + 
+    theme(axis.text.x=element_text(angle = 45, hjust = 1)) +
+    facet_grid(Crime~.)+
+    theme_bw() + 
+    scale_fill_brewer(palette = "Set1") +
+    ggtitle("Regional percentages of crimes committed with firearms minus US total percentage")
+print(pl)
+```
+
+
+
